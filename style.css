@@ -1,0 +1,139 @@
+/* ==========================================================================
+   BoardCast Modern Stylesheet
+   Dark OLED glassmorphic theme, WebRTC video filters & gesture animations
+   ========================================================================== */
+
+:root {
+  --color-oled: #050608;
+  --color-brand: #3366ff;
+  --color-brand-glow: rgba(51, 102, 255, 0.25);
+  --color-panel: #0d1017;
+  --color-border: rgba(255, 255, 255, 0.08);
+}
+
+/* Base resets & typography */
+html, body {
+  background-color: var(--color-oled);
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Filter presets for video / freeze canvas */
+.filter-transition {
+  transition: filter 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Normal preset */
+.filter-normal {
+  filter: none !important;
+}
+
+/* High-Contrast Chalk: white chalk pops brightly against dark slate */
+.filter-chalk {
+  filter: contrast(175%) brightness(108%) saturate(0%) !important;
+}
+
+/* Anti-Glare Marker: suppresses classroom ceiling light reflections on whiteboard */
+.filter-marker {
+  filter: contrast(145%) brightness(92%) saturate(115%) !important;
+}
+
+/* Inversion: inverts dark board into clean white paper with dark text */
+.filter-invert {
+  filter: invert(100%) hue-rotate(180deg) contrast(135%) brightness(96%) !important;
+}
+
+/* B&W Document Scanner: aggressive binary threshold style */
+.filter-bw-sharp {
+  filter: grayscale(100%) contrast(230%) brightness(102%) !important;
+}
+
+/* Filter selector buttons */
+.filter-btn {
+  background-color: rgba(30, 41, 59, 0.6);
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.filter-btn:hover {
+  color: #f1f5f9;
+  background-color: rgba(51, 65, 85, 0.8);
+}
+
+.filter-btn.active {
+  background: linear-gradient(135deg, rgba(51, 102, 255, 0.2), rgba(6, 182, 212, 0.2));
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.4);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
+}
+
+/* Video viewport interaction */
+#videoViewport {
+  position: relative;
+  overflow: hidden;
+  touch-action: none; /* Disable default browser scroll & zoom inside player */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#videoTransformWrapper {
+  will-change: transform;
+  transform-origin: center center;
+}
+
+/* Toast styling */
+.toast-item {
+  transform: translateY(10px) scale(0.95);
+  opacity: 0;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.toast-item.show {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+.toast-item.hide {
+  transform: translateY(10px) scale(0.95);
+  opacity: 0;
+}
+
+/* Safe area support for iPhone notch */
+@supports (padding: env(safe-area-inset-bottom)) {
+  body {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  header {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+}
+
+/* Pulsing effect for stream indicators */
+@keyframes livePulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+.pulse-red-glow {
+  animation: livePulse 2s infinite;
+}

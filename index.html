@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#090a10" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="description" content="BoardCast — прямая трансляция школьной и университетской доски со смартфона на смартфоны одногруппников в реальном времени" />
+  <title>BoardCast — Трансляция доски в реальном времени</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f5ff',
+              100: '#e0ecff',
+              400: '#5c8aff',
+              500: '#3366ff',
+              600: '#1a47eb',
+              700: '#1235b8'
+            },
+            oled: '#050608',
+            panel: '#0d1017'
+          },
+          animation: {
+            'pulse-subtle': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'fade-in': 'fadeIn 0.25s ease-out forwards',
+            'slide-up': 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards'
+          },
+          keyframes: {
+            fadeIn: {
+              '0%': { opacity: '0', transform: 'scale(0.98)' },
+              '100%': { opacity: '1', transform: 'scale(1)' }
+            },
+            slideUp: {
+              '0%': { transform: 'translateY(100%)' },
+              '100%': { transform: 'translateY(0)' }
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- PeerJS WebRTC Library -->
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+
+  <!-- QRCode.js Library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="bg-oled text-slate-100 min-h-screen font-sans selection:bg-brand-500 selection:text-white overflow-x-hidden antialiased flex flex-col justify-between">
+
+  <!-- Background Ambient Glow -->
+  <div class="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+    <div class="absolute -top-40 -left-40 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl"></div>
+    <div class="absolute top-1/2 -right-40 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl"></div>
+  </div>
+
+  <!-- Main Top Bar -->
+  <header class="relative z-30 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-xl px-4 py-3 sticky top-0 transition-all">
+    <div class="max-w-6xl mx-auto flex items-center justify-between">
+      <!-- Logo -->
+      <a href="#" id="brandLogoBtn" class="flex items-center gap-2.5 group">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 via-indigo-500 to-cyan-400 p-[1.5px] shadow-lg shadow-brand-500/20 group-hover:shadow-brand-500/40 transition">
+          <div class="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
+            <svg class="w-5 h-5 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center gap-1.5">
+            <span class="font-black text-lg tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">BoardCast</span>
+            <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20">P2P</span>
+          </div>
+          <p class="text-[10px] text-slate-400 font-medium leading-none hidden sm:block">С первого ряда на весь поток</p>
+        </div>
+      </a>
+
+      <!-- Dynamic Header Actions -->
+      <div class="flex items-center gap-2">
+        <!-- Live Status Pill (Host or Viewer) -->
+        <div id="headerLiveBadge" class="hidden items-center gap-2 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold animate-pulse">
+          <span class="w-2 h-2 rounded-full bg-red-500 shadow-sm shadow-red-500"></span>
+          <span id="headerLiveText">В ЭФИРЕ</span>
+        </div>
+
+        <!-- Gallery Button (Viewer Mode) -->
+        <button id="headerGalleryBtn" class="hidden items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-xs font-medium text-slate-200 border border-slate-700/60 transition active:scale-95">
+          <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          <span>Галерея</span>
+          <span id="galleryCountBadge" class="bg-amber-500/20 text-amber-300 text-[10px] font-bold px-1.5 py-0.2 rounded-full">0</span>
+        </button>
+
+        <!-- Help / FAQ Button -->
+        <button id="helpModalBtn" title="Как это работает" class="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/60 transition">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </button>
+
+        <!-- Leave Room Button (if inside host or viewer) -->
+        <button id="leaveRoomBtn" class="hidden items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 text-xs font-semibold border border-red-500/20 transition active:scale-95">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
+          <span class="hidden sm:inline">Выйти</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Container for App Views -->
+  <main class="relative z-10 flex-1 max-w-6xl w-full mx-auto px-4 py-4 md:py-6 flex flex-col justify-center">
+
+    <!-- ======================================================== -->
+    <!-- VIEW 1: HOME / START SELECTION SCREEN                    -->
+    <!-- ======================================================== -->
+    <section id="viewHome" class="w-full max-w-xl mx-auto space-y-6 animate-fade-in">
+
+      <!-- Hero Header -->
+      <div class="text-center space-y-2 py-2">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-slate-300 text-xs font-medium mb-1">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+          <span>WebRTC P2P • Без серверов и задержки</span>
+        </div>
+        <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight text-white leading-tight">
+          Хватит фотать доску в чат.<br/>
+          <span class="bg-gradient-to-r from-brand-400 via-indigo-300 to-cyan-300 bg-clip-text text-transparent">Пусть смотрят вживую.</span>
+        </h1>
+        <p class="text-sm text-slate-400 max-w-md mx-auto">
+          Поставь телефон у доски на парту. Одногруппники подключаются по 4-значному коду или QR и зумят формулы прямо в браузере.
+        </p>
+      </div>
+
+      <!-- Action Cards Grid -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+        <!-- Mode 1: Host Card -->
+        <div class="group relative rounded-2xl p-5 bg-gradient-to-b from-slate-900/90 to-slate-950/90 border border-slate-800 hover:border-brand-500/50 transition-all duration-300 shadow-xl flex flex-col justify-between hover:shadow-brand-500/10">
+          <div class="space-y-3">
+            <div class="w-12 h-12 rounded-xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400 group-hover:scale-105 group-hover:bg-brand-500/20 transition">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <div>
+              <h2 class="text-lg font-bold text-white group-hover:text-brand-300 transition">Я транслирую доску</h2>
+              <p class="text-xs text-slate-400 mt-1">
+                Сидишь на первом ряду? Запусти камеру, поставь на парту и поделись кодом с потоком.
+              </p>
+            </div>
+            <ul class="text-[11px] text-slate-400 space-y-1 pt-1 border-t border-slate-800/80">
+              <li class="flex items-center gap-1.5"><span class="text-emerald-400 font-bold">✓</span> Выбор телевика / оптического зума</li>
+              <li class="flex items-center gap-1.5"><span class="text-emerald-400 font-bold">✓</span> AMOLED-режим (защита от перегрева)</li>
+              <li class="flex items-center gap-1.5"><span class="text-emerald-400 font-bold">✓</span> Экран не гаснет (Wake Lock)</li>
+            </ul>
+          </div>
+          <button id="startHostBtn" class="mt-5 w-full py-3 px-4 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white text-sm font-semibold shadow-lg shadow-brand-500/25 active:scale-[0.98] transition flex items-center justify-center gap-2">
+            <span>Создать трансляцию</span>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Mode 2: Viewer Card -->
+        <div class="group relative rounded-2xl p-5 bg-gradient-to-b from-slate-900/90 to-slate-950/90 border border-slate-800 hover:border-cyan-500/50 transition-all duration-300 shadow-xl flex flex-col justify-between hover:shadow-cyan-500/10">
+          <div class="space-y-3">
+            <div class="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 group-hover:scale-105 group-hover:bg-cyan-500/20 transition">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+            </div>
+            <div>
+              <h2 class="text-lg font-bold text-white group-hover:text-cyan-300 transition">Смотреть доску</h2>
+              <p class="text-xs text-slate-400 mt-1">
+                Сидишь на галерке? Введи 4-значный код комнаты и приближай любые формулы.
+              </p>
+            </div>
+
+            <!-- Room Code Form -->
+            <div class="space-y-2 pt-1">
+              <label class="block text-[11px] font-medium text-slate-400 uppercase tracking-wider">Код комнаты</label>
+              <div class="relative">
+                <input 
+                  type="text" 
+                  id="roomCodeInput" 
+                  maxlength="6" 
+                  placeholder="Например: 4829" 
+                  autocomplete="off" 
+                  autocapitalize="characters"
+                  class="w-full bg-slate-950 border border-slate-700/80 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 rounded-xl px-4 py-2.5 text-center text-lg font-mono font-bold tracking-widest text-cyan-300 placeholder:text-slate-600 placeholder:tracking-normal placeholder:font-sans placeholder:text-sm outline-none transition"
+                />
+              </div>
+            </div>
+            <ul class="text-[11px] text-slate-400 space-y-1 pt-1 border-t border-slate-800/80">
+              <li class="flex items-center gap-1.5"><span class="text-cyan-400 font-bold">✓</span> Pinch-to-zoom (зум пальцами до 10x)</li>
+              <li class="flex items-center gap-1.5"><span class="text-cyan-400 font-bold">✓</span> Стоп-кадр (пока лектор не стёр)</li>
+              <li class="flex items-center gap-1.5"><span class="text-cyan-400 font-bold">✓</span> Улучшайзер мела / антиблик маркера</li>
+            </ul>
+          </div>
+          <button id="joinViewerBtn" class="mt-5 w-full py-3 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-sm font-semibold shadow-lg shadow-cyan-500/25 active:scale-[0.98] transition flex items-center justify-center gap-2">
+            <span>Подключиться к доске</span>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+            </svg>
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Quick Feature Highlights -->
+      <div class="p-4 rounded-xl bg-slate-900/50 border border-slate-800/60 flex items-center justify-between text-xs text-slate-400 flex-wrap gap-3">
+        <div class="flex items-center gap-2">
+          <span class="text-brand-400 text-base">⚡</span>
+          <span><b>Прямой P2P:</b> Видео не идет на чужие сервера</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-amber-400 text-base">📶</span>
+          <span><b>В одной Wi-Fi сети:</b> Работает без расхода мобильного интернета</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- VIEW 2: HOST VIEW («Я ТРАНСЛИРУЮ ДОСКУ»)                 -->
+    <!-- ======================================================== -->
+    <section id="viewHost" class="w-full max-w-3xl mx-auto space-y-4 hidden animate-fade-in">
+
+      <!-- Host Top Info & Stats Banner -->
+      <div class="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 backdrop-blur-md shadow-lg">
+        <div class="flex items-center gap-3">
+          <!-- Room Code Pill -->
+          <button id="hostCopyCodeBtn" title="Нажми, чтобы скопировать ссылку" class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-brand-500/10 border border-brand-500/30 text-brand-300 hover:bg-brand-500/20 transition active:scale-95 group">
+            <span class="text-xs uppercase text-slate-400 font-medium">Комната:</span>
+            <span id="hostRoomCodeDisplay" class="font-mono text-base font-bold text-white tracking-wider">----</span>
+            <svg class="w-4 h-4 text-brand-400 group-hover:scale-110 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+          </button>
+
+          <!-- Viewer Counter Badge -->
+          <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-200 text-xs font-semibold">
+            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+            <span id="hostViewersCount">0</span>
+            <span class="text-slate-400 font-normal">зрителей</span>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <!-- Show QR Code Button -->
+          <button id="hostShowQrBtn" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold border border-slate-700 transition active:scale-95">
+            <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+            </svg>
+            <span>QR-код</span>
+          </button>
+
+          <!-- Wake Lock Status Indicator -->
+          <div id="wakeLockStatus" title="Экран не погаснет" class="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-medium">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+            <span class="hidden md:inline">WakeLock</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Host Viewfinder & Video Preview Area -->
+      <div class="relative w-full aspect-video sm:aspect-[16/9] bg-black rounded-2xl overflow-hidden border border-slate-800 shadow-2xl flex items-center justify-center group">
+        <!-- Live Camera Stream -->
+        <video 
+          id="hostVideoPreview" 
+          autoplay 
+          playsinline 
+          muted 
+          class="w-full h-full object-contain bg-black">
+        </video>
+
+        <!-- Hidden Canvas for full-res HQ Snapshots -->
+        <canvas id="hostSnapshotCanvas" class="hidden"></canvas>
+
+        <!-- Viewfinder Overlay Elements -->
+        <div class="absolute inset-0 pointer-events-none p-3 flex flex-col justify-between">
+          <div class="flex items-center justify-between">
+            <div class="px-2 py-1 rounded-lg bg-black/60 backdrop-blur-md text-[10px] font-mono text-slate-300 border border-white/10 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+              <span id="hostStreamResolution">1080p • 30fps</span>
+            </div>
+            <!-- Torch status if available -->
+            <button id="hostTorchBtn" class="pointer-events-auto hidden p-2 rounded-xl bg-black/60 backdrop-blur-md text-amber-400 border border-white/10 hover:bg-black/80 transition active:scale-95" title="Фонарик / Вспышка">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="flex items-center justify-between text-[11px] text-slate-400">
+            <span class="bg-black/60 px-2 py-0.5 rounded backdrop-blur-md">Хост: камера направлена на доску</span>
+            <span id="hostTrackState" class="bg-black/60 px-2 py-0.5 rounded backdrop-blur-md text-emerald-400">Поток активен</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Camera Settings & Hardware Controls -->
+      <div class="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4">
+        <!-- Camera Selector -->
+        <div class="space-y-1.5">
+          <label class="block text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+            <svg class="w-4 h-4 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+            </svg>
+            <span>Выбор объектива / тыловой камеры (телевик / ультраширик)</span>
+          </label>
+          <div class="flex gap-2">
+            <select id="hostCameraSelect" class="flex-1 bg-slate-950 border border-slate-700 text-sm text-slate-200 rounded-xl px-3 py-2.5 focus:border-brand-500 outline-none transition">
+              <option value="">Поиск камер смартфона...</option>
+            </select>
+            <button id="hostRefreshCamerasBtn" title="Обновить список камер" class="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 transition">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Hardware Zoom Slider (if supported by device) -->
+        <div id="hostZoomContainer" class="space-y-1.5 hidden">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-slate-300 font-semibold flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+              </svg>
+              <span>Аппаратный зум сенсора</span>
+            </span>
+            <span id="hostZoomValue" class="font-mono text-brand-400 font-bold bg-brand-500/10 px-2 py-0.5 rounded">1.0x</span>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-xs text-slate-500">1x</span>
+            <input 
+              type="range" 
+              id="hostZoomSlider" 
+              min="1" 
+              max="5" 
+              step="0.1" 
+              value="1" 
+              class="w-full h-2 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-brand-500" 
+            />
+            <span id="hostZoomMaxLabel" class="text-xs text-slate-500">5x</span>
+          </div>
+        </div>
+
+        <!-- AMOLED Black Mode Trigger (KILLER FEATURE) -->
+        <div class="pt-2">
+          <button id="activateAmoledBtn" class="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-slate-950 via-slate-900 to-black hover:bg-slate-900 border border-slate-700/80 hover:border-slate-500 text-white font-semibold text-sm shadow-xl flex items-center justify-center gap-2.5 transition active:scale-[0.99] group">
+            <span class="w-3 h-3 rounded-full bg-slate-400 group-hover:bg-brand-400 transition"></span>
+            <span>Включить режим экономии (AMOLED Black)</span>
+            <span class="text-[11px] font-normal text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full ml-1">Экран отключится</span>
+          </button>
+          <p class="text-[11px] text-slate-500 text-center mt-1.5">
+            Дисплей станет полностью черным, телефон не перегреется на длинной паре. Двойной тап вернет интерфейс.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- VIEW 3: VIEWER VIEW («СМОТРЕТЬ ДОСКУ»)                   -->
+    <!-- ======================================================== -->
+    <section id="viewViewer" class="w-full max-w-4xl mx-auto space-y-3 hidden animate-fade-in flex-1 flex flex-col">
+
+      <!-- Viewer Top Control Bar -->
+      <div class="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-2xl bg-slate-900/90 border border-slate-800 backdrop-blur-md">
+        <!-- Room Info & Status -->
+        <div class="flex items-center gap-2">
+          <div class="px-2.5 py-1 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono font-bold text-cyan-300">
+            <span class="text-slate-500 font-sans font-normal text-[10px] mr-1">КОД</span>
+            <span id="viewerRoomCodeDisplay">----</span>
+          </div>
+
+          <div id="viewerConnectionState" class="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-medium">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span id="viewerStateText">Подключено к доске</span>
+          </div>
+        </div>
+
+        <!-- Filter Presets Switcher («Улучшайзер доски») -->
+        <div class="flex items-center gap-1 overflow-x-auto py-0.5 max-w-full">
+          <button data-filter="normal" class="filter-btn active text-xs px-2.5 py-1 rounded-lg font-medium transition whitespace-nowrap">
+            Обычный
+          </button>
+          <button data-filter="chalk" class="filter-btn text-xs px-2.5 py-1 rounded-lg font-medium transition whitespace-nowrap" title="Усиливает контраст белого мела на темной доске">
+            Четкий мел
+          </button>
+          <button data-filter="marker" class="filter-btn text-xs px-2.5 py-1 rounded-lg font-medium transition whitespace-nowrap" title="Снижает блики от ламп на маркерной доске">
+            Антиблик
+          </button>
+          <button data-filter="invert" class="filter-btn text-xs px-2.5 py-1 rounded-lg font-medium transition whitespace-nowrap" title="Делает доску белой как тетрадный лист">
+            Инверсия
+          </button>
+          <button data-filter="bw-sharp" class="filter-btn text-xs px-2.5 py-1 rounded-lg font-medium transition whitespace-nowrap" title="Максимальный бинарный контраст">
+            Ч/Б резкость
+          </button>
+        </div>
+      </div>
+
+      <!-- Main Interactive Video Screen Container (Pinch & Pan Target) -->
+      <div 
+        id="videoViewport" 
+        class="relative flex-1 w-full min-h-[380px] sm:min-h-[480px] bg-black rounded-2xl overflow-hidden border border-slate-800 shadow-2xl touch-none select-none flex items-center justify-center cursor-grab active:cursor-grabbing">
+
+        <!-- Transforming Content Wrapper (video + freeze frame canvas) -->
+        <div id="videoTransformWrapper" class="relative w-full h-full flex items-center justify-center origin-center transition-transform duration-75">
+          <!-- Remote Video Feed -->
+          <video 
+            id="viewerVideo" 
+            autoplay 
+            playsinline 
+            muted 
+            class="w-full h-full object-contain pointer-events-none filter-transition">
+          </video>
+
+          <!-- Freeze Frame Canvas (active during pause) -->
+          <canvas 
+            id="freezeCanvas" 
+            class="absolute inset-0 w-full h-full object-contain hidden pointer-events-none filter-transition">
+          </canvas>
+        </div>
+
+        <!-- Buffering / Connecting Spinner Overlay -->
+        <div id="viewerLoadingOverlay" class="absolute inset-0 bg-slate-950/90 backdrop-blur-sm flex flex-col items-center justify-center gap-3 p-6 text-center z-20">
+          <div class="w-12 h-12 rounded-full border-4 border-brand-500/20 border-t-brand-500 animate-spin"></div>
+          <div>
+            <h3 class="text-base font-bold text-white">Подключение к трансляции доски...</h3>
+            <p class="text-xs text-slate-400 mt-1 max-w-xs">Устанавливаем прямое WebRTC соединение со смартфоном у доски</p>
+          </div>
+        </div>
+
+        <!-- Freeze Frame Status Banner -->
+        <div id="freezeBadge" class="hidden absolute top-3 left-3 z-20 items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/90 text-slate-950 font-bold text-xs shadow-lg backdrop-blur-md animate-fade-in">
+          <svg class="w-4 h-4 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>СТОП-КАДР: Списывай спокойно!</span>
+        </div>
+
+        <!-- Floating Zoom Level Pill with Quick Reset -->
+        <div id="floatingZoomPill" class="absolute top-3 right-3 z-20 flex items-center gap-1.5 bg-black/70 backdrop-blur-md border border-white/10 px-2.5 py-1 rounded-xl text-xs font-mono font-bold text-white shadow-lg">
+          <span id="zoomLevelDisplay">1.0x</span>
+          <button id="resetZoomBtn" class="hidden text-[10px] bg-slate-800 hover:bg-slate-700 px-1.5 py-0.5 rounded font-sans text-cyan-300 font-normal transition">
+            Сброс
+          </button>
+        </div>
+
+        <!-- Hint on first touch -->
+        <div id="zoomHintOverlay" class="pointer-events-none absolute bottom-4 text-center px-4 py-1.5 rounded-full bg-black/60 backdrop-blur-md text-slate-400 text-[11px] border border-white/5 transition opacity-90">
+          🔍 Зум двумя пальцами • Перетаскивание • Двойной тап для 2.5x
+        </div>
+      </div>
+
+      <!-- Viewer Action Toolbar (Bottom Sticky) -->
+      <div class="grid grid-cols-3 sm:flex items-center justify-center gap-2 sm:gap-3 p-2 rounded-2xl bg-slate-900/90 border border-slate-800 backdrop-blur-md">
+        
+        <!-- Action 1: Freeze Frame (Стоп-кадр) -->
+        <button id="freezeToggleBtn" class="flex flex-col sm:flex-row items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 font-semibold text-xs border border-slate-700 transition active:scale-95 group">
+          <svg id="freezeIconPause" class="w-5 h-5 text-amber-400 group-hover:scale-110 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <svg id="freezeIconPlay" class="w-5 h-5 text-emerald-400 hidden group-hover:scale-110 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span id="freezeBtnText">Стоп-кадр</span>
+        </button>
+
+        <!-- Action 2: HQ Snapshot (Четкий снимок) -->
+        <button id="takeSnapshotBtn" class="flex flex-col sm:flex-row items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-lg shadow-brand-500/20 transition active:scale-95 group">
+          <svg class="w-5 h-5 text-white group-hover:rotate-12 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          <span>Четкий снимок</span>
+        </button>
+
+        <!-- Action 3: Open Gallery (Галерея пары) -->
+        <button id="openGalleryDrawerBtn" class="flex flex-col sm:flex-row items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 font-semibold text-xs border border-slate-700 transition active:scale-95">
+          <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          <span>Галерея (<span id="viewerGalleryBadge">0</span>)</span>
+        </button>
+
+        <!-- Action 4: Fullscreen mode (desktop/landscape mobile) -->
+        <button id="toggleFullscreenBtn" class="hidden sm:flex items-center justify-center p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition active:scale-95" title="На весь экран">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+          </svg>
+        </button>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ======================================================== -->
+  <!-- AMOLED BLACK OVERLAY (Screen Saver Mode for Host)        -->
+  <!-- ======================================================== -->
+  <div id="amoledOverlay" class="fixed inset-0 bg-black z-50 hidden flex-col items-center justify-center p-6 text-center select-none cursor-pointer">
+    <div class="space-y-4 max-w-xs animate-pulse-subtle">
+      <div class="w-3 h-3 rounded-full bg-red-600/70 mx-auto"></div>
+      <p class="text-xs font-mono tracking-widest text-neutral-600 uppercase">
+        Идет трансляция доски
+      </p>
+      <div class="text-neutral-500 text-sm">
+        <span id="amoledViewersCount" class="font-bold text-neutral-400">0</span> зрителей онлайн
+      </div>
+      <div class="pt-8 text-[11px] text-neutral-700 leading-relaxed">
+        Экран выключен для защиты от нагрева и экономии батареи.<br/>
+        <span class="text-neutral-600 font-semibold underline decoration-neutral-800">Двойной тап</span> в любом месте для возврата
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- QR CODE MODAL                                            -->
+  <!-- ======================================================== -->
+  <div id="qrModal" class="fixed inset-0 z-40 bg-black/80 backdrop-blur-md hidden items-center justify-center p-4">
+    <div class="relative w-full max-w-sm rounded-3xl bg-slate-900 border border-slate-800 p-6 space-y-5 text-center shadow-2xl animate-fade-in">
+      <!-- Close Button -->
+      <button id="closeQrModalBtn" class="absolute top-4 right-4 p-2 text-slate-400 hover:text-white rounded-full bg-slate-800/80 transition">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+
+      <div>
+        <h3 class="text-lg font-bold text-white">QR-код для подключения</h3>
+        <p class="text-xs text-slate-400 mt-0.5">Покажи соседу по парте или отправь в беседу</p>
+      </div>
+
+      <!-- QR Container -->
+      <div class="p-4 bg-white rounded-2xl inline-block shadow-inner mx-auto">
+        <div id="qrcodeBox" class="w-52 h-52 flex items-center justify-center"></div>
+      </div>
+
+      <!-- Code & Link Box -->
+      <div class="space-y-2">
+        <div class="text-2xl font-mono font-black text-brand-400 tracking-wider" id="qrModalCodeText">
+          ----
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="copyShareLinkBtn" class="flex-1 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white border border-slate-700 transition flex items-center justify-center gap-1.5 active:scale-95">
+            <svg class="w-4 h-4 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            <span>Скопировать ссылку</span>
+          </button>
+          <button id="nativeShareBtn" class="py-2.5 px-3 rounded-xl bg-brand-600 hover:bg-brand-500 text-xs font-semibold text-white transition flex items-center justify-center gap-1.5 active:scale-95">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+            </svg>
+            <span>Поделиться</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- GALLERY DRAWER (Bottom Sheet for lecture snapshots)      -->
+  <!-- ======================================================== -->
+  <div id="galleryDrawer" class="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm hidden flex-col justify-end">
+    <div class="bg-slate-900 border-t border-slate-800 rounded-t-3xl max-h-[85vh] flex flex-col w-full max-w-3xl mx-auto shadow-2xl animate-slide-up">
+      <!-- Drawer Header -->
+      <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <h3 class="text-base font-bold text-white">Галерея пары</h3>
+          <span id="galleryDrawerCount" class="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">0 снимков</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="downloadAllPhotosBtn" class="text-xs font-semibold px-3 py-1.5 rounded-xl bg-brand-600/20 text-brand-300 hover:bg-brand-600/30 border border-brand-500/30 transition">
+            Скачать все
+          </button>
+          <button id="closeGalleryDrawerBtn" class="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Snapshots Grid -->
+      <div id="galleryGrid" class="p-4 overflow-y-auto flex-1 grid grid-cols-2 sm:grid-cols-3 gap-3 min-h-[220px]">
+        <!-- Empty State -->
+        <div id="galleryEmptyState" class="col-span-full flex flex-col items-center justify-center py-12 text-center text-slate-500 space-y-2">
+          <svg class="w-12 h-12 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          <p class="text-sm">Пока нет сохраненных снимков</p>
+          <p class="text-xs text-slate-600">Нажми «Четкий снимок» во время трансляции</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- FULLSCREEN PHOTO PREVIEW MODAL                           -->
+  <!-- ======================================================== -->
+  <div id="photoPreviewModal" class="fixed inset-0 z-50 bg-black/95 backdrop-blur-md hidden flex-col justify-between p-4">
+    <div class="flex items-center justify-between text-white z-10">
+      <span id="photoPreviewTime" class="text-xs font-mono text-slate-400">14:35:12</span>
+      <div class="flex items-center gap-2">
+        <a id="photoPreviewDownloadLink" href="#" download="boardcast_snapshot.jpg" class="px-3 py-1.5 rounded-xl bg-brand-600 text-white text-xs font-semibold flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          <span>Скачать</span>
+        </a>
+        <button id="closePhotoPreviewBtn" class="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="flex-1 flex items-center justify-center p-2 overflow-hidden">
+      <img id="photoPreviewImg" src="" alt="Снимок доски" class="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl" />
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- FAQ / HOW IT WORKS MODAL                                 -->
+  <!-- ======================================================== -->
+  <div id="helpModal" class="fixed inset-0 z-40 bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="relative w-full max-w-lg rounded-3xl bg-slate-900 border border-slate-800 p-6 space-y-4 max-h-[90vh] overflow-y-auto text-slate-300 shadow-2xl animate-fade-in">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-lg font-bold text-white flex items-center gap-2">
+          <span>🎓 Как работает BoardCast на парах</span>
+        </h3>
+        <button id="closeHelpModalBtn" class="p-1.5 text-slate-400 hover:text-white rounded-xl bg-slate-800 transition">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs leading-relaxed">
+        <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
+          <h4 class="font-bold text-brand-300 mb-1">1. Камера на парте (Хост):</h4>
+          <p>
+            Человек с первого ряда ставит телефон на подставку или прислоняет к пеналу/рюкзаку, направляя камеру на доску. Нажимает «Я транслирую доску», выбирает камеру (или телевик) и передает 4-значный код или QR-код потоку.
+          </p>
+        </div>
+
+        <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
+          <h4 class="font-bold text-cyan-300 mb-1">2. Зрители на галерке:</h4>
+          <p>
+            Открывают сайт на телефоне или ноутбуке, вводят 4 цифры (или просто сканируют QR-код камерой). Поток открывается прямо в браузере с задержкой меньше 0.2 сек.
+          </p>
+        </div>
+
+        <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
+          <h4 class="font-bold text-emerald-300 mb-1">3. Фишки для списывания:</h4>
+          <ul class="list-disc list-inside space-y-1 text-slate-400">
+            <li><b class="text-slate-200">Стоп-кадр:</b> Препод встал перед доской или стирает тряпкой? Жми «Стоп-кадр» и спокойно дописывай формулу.</li>
+            <li><b class="text-slate-200">Зум:</b> Растягивай картинку двумя пальцами (Pinch-to-zoom) до мельчайших индексов.</li>
+            <li><b class="text-slate-200">Улучшайзер:</b> Фильтры «Четкий мел» и «Инверсия» превращают неразборчивый почерк в контрастный читаемый конспект.</li>
+            <li><b class="text-slate-200">AMOLED Black:</b> Хост включает черный экран — телефон не греется и не тратит батарею.</li>
+          </ul>
+        </div>
+
+        <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
+          <h4 class="font-bold text-amber-300 mb-1">4. Нужно ли платить за интернет?</h4>
+          <p>
+            Если раздать с телефона точку доступа (Wi-Fi Hotspot) или все подключены к университетскому Wi-Fi, видеопоток идет напрямую по локальной сети между телефонами без расхода мобильного трафика!
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- TOAST NOTIFICATIONS CONTAINER                            -->
+  <!-- ======================================================== -->
+  <div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none px-4"></div>
+
+  <!-- Footer -->
+  <footer class="relative z-10 border-t border-slate-900 bg-slate-950/60 px-4 py-3 text-center text-xs text-slate-500">
+    <div class="max-w-6xl mx-auto flex items-center justify-between flex-wrap gap-2">
+      <span>BoardCast • P2P WebRTC Board Broadcaster</span>
+      <span class="text-[11px] text-slate-600">Zero-lag direct device connection</span>
+    </div>
+  </footer>
+
+  <!-- App Script -->
+  <script src="app.js"></script>
+</body>
+</html>
